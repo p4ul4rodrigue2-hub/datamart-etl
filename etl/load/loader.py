@@ -1,16 +1,21 @@
 import pandas as pd
-import psycopg2
 from psycopg2.extras import execute_values
+from airflow.hooks.postgres_hook import PostgresHook
 import os
 
 def get_conn():
-    return psycopg2.connect(
-        host=os.getenv("ANALYTICS_DB_HOST", "15.204.173.204"),
-        port=os.getenv("ANALYTICS_DB_PORT", "6432"),
-        dbname=os.getenv("ANALYTICS_DB_NAME", "paula_r"),
-        user=os.getenv("ANALYTICS_DB_USER", "coder-ra-c6"),
-        password=os.getenv("ANALYTICS_DB_PASSWORD", "Riwi2026**"),
-    )
+    try:
+        hook = PostgresHook(postgres_conn_id="analytics_db")
+        return hook.get_conn()
+    except Exception:
+        import psycopg2
+        return psycopg2.connect(
+            host=os.getenv("ANALYTICS_DB_HOST", "15.204.173.204"),
+            port=os.getenv("ANALYTICS_DB_PORT", "6432"),
+            dbname=os.getenv("ANALYTICS_DB_NAME", "paula_r"),
+            user=os.getenv("ANALYTICS_DB_USER", "coder-ra-c6"),
+            password=os.getenv("ANALYTICS_DB_PASSWORD", "Riwi2026**"),
+        )
 
 def crear_tablas():
     conn = get_conn()
@@ -64,11 +69,16 @@ def crear_tablas():
     print("Tablas creadas correctamente")
 
 def cargar():
+    from airflow.models import Variable
+    batch_size = int(Variable.get("batch_size", default_var=5000))
+
     crear_tablas()
     conn = get_conn()
     cursor = conn.cursor()
+
     cursor.execute("TRUNCATE TABLE ventas, devoluciones, log_rechazos RESTART IDENTITY")
     conn.commit()
+
     ventas = pd.read_csv("/opt/airflow/data/processed/ventas.csv")
     ventas = ventas.fillna("")
     datos_ventas = [
@@ -81,8 +91,9 @@ def cargar():
         INSERT INTO ventas (invoice_no, stock_code, description, quantity,
             invoice_date, unit_price, customer_id, country, revenue_bruto, fuente)
         VALUES %s
-    """, datos_ventas, page_size=5000)
+    """, datos_ventas, page_size=batch_size)
     print(f"Ventas cargadas: {len(datos_ventas)}")
+
     devoluciones = pd.read_csv("/opt/airflow/data/processed/devoluciones.csv")
     devoluciones = devoluciones.fillna("")
     datos_dev = [
@@ -95,8 +106,9 @@ def cargar():
         INSERT INTO devoluciones (invoice_no, stock_code, description, quantity,
             invoice_date, unit_price, customer_id, country, fuente)
         VALUES %s
-    """, datos_dev, page_size=5000)
+    """, datos_dev, page_size=batch_size)
     print(f"Devoluciones cargadas: {len(datos_dev)}")
+
     rechazos = pd.read_csv("/opt/airflow/data/processed/rechazos.csv")
     rechazos = rechazos.fillna("")
     datos_rechazos = [
@@ -109,8 +121,9 @@ def cargar():
         INSERT INTO log_rechazos (invoice_no, stock_code, description, quantity,
             invoice_date, unit_price, customer_id, country, motivo, fuente)
         VALUES %s
-    """, datos_rechazos, page_size=5000)
+    """, datos_rechazos, page_size=batch_size)
     print(f"Rechazos cargados: {len(datos_rechazos)}")
+
     conn.commit()
     conn.close()
     print("Datos cargados correctamente")

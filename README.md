@@ -1,25 +1,36 @@
-## DATAMART 
-
-
+# DataMart ETL Pipeline
 
 Pipeline ETL construido con Apache Airflow 2.9.1 en Docker. Procesa datos de transacciones de e-commerce desde dos fuentes heterogéneas, los transforma y los carga en un repositorio analítico PostgreSQL.
+
+## Contexto del negocio
+
+DataMart S.A.S. es una empresa colombiana de comercio electrónico que opera en Colombia, México y Perú. Durante 2023 experimentó un crecimiento del 40% en transacciones, pero sus datos de ventas están dispersos en archivos planos sin estructura analítica.
+
+Este pipeline ETL es la primera pieza de su plataforma de datos. Consolida transacciones de dos fuentes históricas, aplica reglas de calidad y las deja disponibles en un repositorio analítico PostgreSQL para que el equipo de negocio pueda consultarlas.
+
+**Fuentes de datos:**
+- `data.csv` — transacciones diarias de la tienda en línea
+- `online_retail_II.xlsx` — historial extendido de dos años adicionales
+
+**Repositorio analítico:**
+- `ventas` — transacciones válidas con revenue bruto y neto
+- `devoluciones` — transacciones con cantidad negativa
+- `log_rechazos` — registros que no cumplen reglas de negocio
 
 ---
 
 ## Arquitectura
 data.csv + online_retail_II.xlsx
 
-↓ Extract
+↓ Extract → data/raw/
 
-data/raw/
-
-↓ Transform
-
-data/processed/
+↓ Transform → data/processed/
 
 ↓ Load
 
 paula_r (PostgreSQL analítico)
+
+---
 
 ## Servicios Docker
 
@@ -34,8 +45,7 @@ paula_r (PostgreSQL analítico)
 
 ## Requisitos
 
-- Docker
-- Docker Compose
+- Docker y Docker Compose
 - Linux / Ubuntu
 
 ---
@@ -68,17 +78,18 @@ ANALYTICS_DB_USER=<usuario>
 
 ANALYTICS_DB_PASSWORD=<contraseña>
 
+> Las credenciales reales nunca se suben al repositorio. El `.env` está excluido en `.gitignore`.
+
 ### 3 — Agregar los archivos de datos
 
-Descarga los archivos desde Kaggle y cópialos en la carpeta `data/raw/`:
+Descarga los archivos desde Kaggle y cópialos en `data/raw/`:
 
-- [data.csv] https://www.kaggle.com/datasets/carrie1/ecommerce-data
-- [online_retail_II.xlsx] https://www.kaggle.com/datasets/thedevastator/online-retail-transaction-dataset
-
-```
+- [data.csv](https://www.kaggle.com/datasets/carrie1/ecommerce-data)
+- [online_retail_II.xlsx](https://www.kaggle.com/datasets/thedevastator/online-retail-transaction-dataset)
 data/raw/data.csv
+
 data/raw/online_retail_II.xlsx
-```
+
 ### 4 — Crear carpetas y permisos
 
 ```bash
@@ -93,7 +104,10 @@ sudo chmod -R 777 logs dags plugins etl data
 sudo docker compose up airflow-init
 ```
 
-Espera a ver `exited with code 0`.
+Espera a ver `exited with code 0`. Este comando crea automáticamente:
+- Usuario admin
+- Airflow Connection `analytics_db`
+- Variables `batch_size` y `fuentes_activas`
 
 ### 6 — Levantar todos los servicios
 
@@ -101,14 +115,9 @@ Espera a ver `exited with code 0`.
 sudo docker compose up -d
 ```
 
-### 7 — Instalar dependencias
+> Las dependencias Python (pandas, psycopg2, openpyxl) se instalan automáticamente mediante el Dockerfile al construir la imagen.
 
-```bash
-sudo docker exec -it --user airflow datamart-etl-airflow-scheduler-1 python -m pip install pandas psycopg2-binary openpyxl
-sudo docker exec -it --user airflow datamart-etl-airflow-webserver-1 python -m pip install pandas psycopg2-binary openpyxl
-```
-
-### 8 — Ejecutar el pipeline
+### 7 — Ejecutar el pipeline
 
 1. Abre `http://localhost:8080`
 2. Usuario: `admin` / Contraseña: `admin`
@@ -119,13 +128,9 @@ sudo docker exec -it --user airflow datamart-etl-airflow-webserver-1 python -m p
 
 ## Verificar que los datos llegaron
 
-Conéctate al repositorio analítico:
-
 ```bash
-psql -h <ANALYTICS_DB_HOST> -p <ANALYTICS_DB_PORT> -U <ANALYTICS_DB_USER> -d <ANALYTICS_DB_NAME> -W
+PGPASSWORD='<contraseña>' psql -h <host> -p <puerto> -U <usuario> -d <nombre_db>
 ```
-
-Ejecuta:
 
 ```sql
 SELECT COUNT(*) FROM ventas;
@@ -139,13 +144,11 @@ SELECT COUNT(*) FROM log_rechazos;
 
 ### Connections
 1. Ve a **Admin → Connections**
-2. Verifica que existe `analytics_db` con el host y credenciales correctas
+2. Verifica que existe `analytics_db`
 
 ### Variables
 1. Ve a **Admin → Variables**
-2. Verifica que existen:
-   - `batch_size`
-   - `fuentes_activas`
+2. Verifica que existen `batch_size` y `fuentes_activas`
 
 ---
 
@@ -174,7 +177,11 @@ datamart-etl/
 
 ├── sql/
 
+│   ├── ddl.sql
+
 │   └── consultas_negocio.sql
+
+├── Dockerfile
 
 ├── docker-compose.yml
 
@@ -183,6 +190,12 @@ datamart-etl/
 ├── .gitignore
 
 └── README.md
+
+---
+
+## Diagrama del modelo de datos
+
+[Ver diagrama en dbdiagram.io](https://dbdiagram.io/d/6a3b0f80d0074fe75d0b4f50)
 
 ---
 
@@ -221,10 +234,10 @@ Edit `.env` with your credentials.
 
 ### 3 — Add data files
 
-Copy CSV/XLSX files to `data/raw/`:
-data/raw/data.csv
+Download from Kaggle and copy to `data/raw/`:
 
-data/raw/online_retail_II.xlsx
+- [data.csv](https://www.kaggle.com/datasets/carrie1/ecommerce-data)
+- [online_retail_II.xlsx](https://www.kaggle.com/datasets/thedevastator/online-retail-transaction-dataset)
 
 ### 4 — Set permissions
 
@@ -239,20 +252,17 @@ sudo chmod -R 777 logs dags plugins etl data
 sudo docker compose up airflow-init
 ```
 
+This automatically creates the admin user, `analytics_db` Connection, and Airflow Variables.
+
 ### 6 — Start all services
 
 ```bash
 sudo docker compose up -d
 ```
 
-### 7 — Install dependencies
+> Python dependencies are installed automatically via Dockerfile.
 
-```bash
-sudo docker exec -it --user airflow datamart-etl-airflow-scheduler-1 python -m pip install pandas psycopg2-binary openpyxl
-sudo docker exec -it --user airflow datamart-etl-airflow-webserver-1 python -m pip install pandas psycopg2-binary openpyxl
-```
-
-### 8 — Run the pipeline
+### 7 — Run the pipeline
 
 1. Open `http://localhost:8080`
 2. User: `admin` / Password: `admin`
@@ -266,9 +276,7 @@ SELECT COUNT(*) FROM ventas;
 SELECT COUNT(*) FROM devoluciones;
 SELECT COUNT(*) FROM log_rechazos;
 ```
-EOF
 
+## Diagram
 
-## Diagrama del modelo de datos
-
-[Ver diagrama en dbdiagram.io] https://dbdiagram.io/d/6a3b0f80d0074fe75d0b4f50
+[View on dbdiagram.io](https://dbdiagram.io/d/6a3b0f80d0074fe75d0b4f50)
