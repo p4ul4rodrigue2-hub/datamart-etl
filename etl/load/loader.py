@@ -32,6 +32,7 @@ def crear_tablas():
             customer_id VARCHAR(20),
             country VARCHAR(100),
             revenue_bruto DECIMAL(10,2),
+            revenue_neto DECIMAL(10,2),
             fuente VARCHAR(10)
         )
     """)
@@ -84,12 +85,12 @@ def cargar():
     datos_ventas = [
         (row["InvoiceNo"], row["StockCode"], row["Description"], row["Quantity"],
          row["InvoiceDate"], row["UnitPrice"], row["CustomerID"], row["Country"],
-         row["revenue_bruto"], row["fuente"])
+         row["revenue_bruto"], row["revenue_neto"], row["fuente"])
         for _, row in ventas.iterrows()
     ]
     execute_values(cursor, """
         INSERT INTO ventas (invoice_no, stock_code, description, quantity,
-            invoice_date, unit_price, customer_id, country, revenue_bruto, fuente)
+            invoice_date, unit_price, customer_id, country, revenue_bruto, revenue_neto, fuente)
         VALUES %s
     """, datos_ventas, page_size=batch_size)
     print(f"Ventas cargadas: {len(datos_ventas)}")

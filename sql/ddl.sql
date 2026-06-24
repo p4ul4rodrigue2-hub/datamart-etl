@@ -9,6 +9,7 @@ CREATE TABLE IF NOT EXISTS ventas (
     customer_id VARCHAR(20),
     country VARCHAR(100),
     revenue_bruto DECIMAL(10,2),
+    revenue_neto DECIMAL(10,2),
     fuente VARCHAR(10)
 );
 

@@ -2,11 +2,9 @@ import pandas as pd
 import os
 
 def transformar():
-    # Cargar CSV1
     df1 = pd.read_csv("/opt/airflow/data/raw/raw_csv1.csv", encoding="ISO-8859-1")
     df1["fuente"] = "csv1"
 
-    # Cargar CSV2 si existe
     ruta_csv2 = "/opt/airflow/data/raw/raw_csv2.csv"
     if os.path.exists(ruta_csv2):
         df2 = pd.read_csv(ruta_csv2, encoding="ISO-8859-1")
@@ -27,32 +25,34 @@ def transformar():
 
     print(f"Total registros antes de limpiar: {len(df)}")
 
-    # 1 - Normalizar StockCode
     df["StockCode"] = df["StockCode"].astype(str).str.upper().str.strip()
-
-    # 2 - Normalizar Description
     df["Description"] = df["Description"].astype(str).str.strip().str.title()
-
-    # 3 - Estandarizar fecha a datetime UTC con formato mixto
     df["InvoiceDate"] = pd.to_datetime(df["InvoiceDate"], format="mixed", dayfirst=False, utc=True)
 
-    # 4 - Separar devoluciones
     devoluciones = df[df["Quantity"] <= 0].copy()
     ventas = df[df["Quantity"] > 0].copy()
 
-    # 5 - Rechazar precio unitario <= 0
     log_rechazos = ventas[ventas["UnitPrice"] <= 0].copy()
     log_rechazos["motivo"] = "UnitPrice <= 0"
     ventas = ventas[ventas["UnitPrice"] > 0]
 
-    # 6 - Calcular revenue bruto
     ventas["revenue_bruto"] = ventas["Quantity"] * ventas["UnitPrice"]
 
-    # 7 - Manejar CustomerID nulo
+    ventas["fecha"] = ventas["InvoiceDate"].dt.date
+    devoluciones["fecha"] = devoluciones["InvoiceDate"].dt.date
+    devoluciones["revenue_devuelto"] = devoluciones["Quantity"].abs() * devoluciones["UnitPrice"]
+
+    neto_por_producto = devoluciones.groupby(["StockCode", "fecha"])["revenue_devuelto"].sum().reset_index()
+    neto_por_producto.columns = ["StockCode", "fecha", "total_devuelto"]
+
+    ventas = ventas.merge(neto_por_producto, on=["StockCode", "fecha"], how="left")
+    ventas["total_devuelto"] = ventas["total_devuelto"].fillna(0)
+    ventas["revenue_neto"] = ventas["revenue_bruto"] - ventas["total_devuelto"]
+    ventas = ventas.drop(columns=["total_devuelto", "fecha"])
+
     ventas["CustomerID"] = ventas["CustomerID"].fillna("ANONIMO").astype(str)
     devoluciones["CustomerID"] = devoluciones["CustomerID"].fillna("ANONIMO").astype(str)
 
-    # 8 - Eliminar duplicados
     ventas = ventas.drop_duplicates()
     devoluciones = devoluciones.drop_duplicates()
 
